@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import AnimatedBackground from "@/components/travel/AnimatedBackground";
+import PhotoBackground from "@/components/travel/PhotoBackground";
 import TripForm from "@/components/travel/TripForm";
 import { Compass, Sparkles, MapPin, Camera, Gem, Shield } from "lucide-react";
 
@@ -25,7 +25,7 @@ export default function Home({ onGenerate }) {
 
   return (
     <div className="relative min-h-screen">
-      <AnimatedBackground theme="sunset" />
+      <PhotoBackground />
       <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-6">
         <div className="flex items-center gap-2.5">
           <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur border border-white/20">
