@@ -1,6 +1,12 @@
-// Deterministic, offline itinerary generator — stands in for an LLM call so the
-// app works with zero API keys. Seeded by the destination + trip params so the
+// Deterministic itinerary generator — stands in for an LLM call so the app
+// works with zero API keys. Seeded by the destination + trip params so the
 // same input always produces the same trip, while different input varies output.
+// Where possible it fills in real place names and addresses from OpenStreetMap
+// (see placesApi.js); when that's unavailable (offline, rate-limited, sparse
+// data for the area) it falls back to the template-based names below, so the
+// app always produces a full itinerary either way.
+
+import { geocodeDestination, fetchNearbyPlaces, buildPlacePools } from "./placesApi";
 
 function hashString(str) {
   let h = 2166136261;
@@ -202,29 +208,76 @@ function fillTemplate(str, dest) {
   return str.replace(/\{dest\}/g, dest);
 }
 
-function buildActivity(rng, category, dest, interests, budgetLevel, isHiddenGem) {
-  const pool = ACTIVITY_TEMPLATES[category] || ACTIVITY_TEMPLATES.culture;
-  const tpl = rng.pick(pool);
+const CATEGORY_LABELS = {
+  nature: "green space", museums: "museum", food: "food spot", culture: "cultural landmark",
+  history: "historic site", shopping: "shopping spot", adventure: "activity venue",
+  relaxation: "relaxing spot", nightlife: "nightlife venue", photography: "scenic viewpoint",
+};
+
+function takeFromPool(pool, usedIds, rng) {
+  if (!pool || !pool.length) return null;
+  const available = pool.filter((p) => !usedIds.has(p.id));
+  if (!available.length) return null;
+  const poi = rng.pick(available);
+  usedIds.add(poi.id);
+  return poi;
+}
+
+function buildActivity(rng, category, dest, interests, budgetLevel, isHiddenGem, placePools, usedIds) {
   const matchBase = interests?.includes(category) ? rng.int(82, 98) : rng.int(55, 80);
-  return {
-    name: fillTemplate(tpl.name, dest),
+  const common = {
     category,
-    description: fillTemplate(tpl.desc, dest),
     match_score: matchBase,
     best_time: rng.pick(["Morning", "Midday", "Afternoon", "Golden hour", "Evening"]),
     travel_time: `${rng.int(5, 25)} min`,
     cost_estimate: rng.pick(COST_ESTIMATES[budgetLevel] || COST_ESTIMATES.standard),
     is_hidden_gem: !!isHiddenGem,
   };
+
+  const poi = placePools ? takeFromPool(placePools.byCategory[category], usedIds, rng) : null;
+  if (poi) {
+    return {
+      ...common,
+      name: poi.name,
+      description: `A real, mapped ${CATEGORY_LABELS[category] || "spot"} in ${dest}.`,
+      address: poi.address,
+    };
+  }
+
+  const pool = ACTIVITY_TEMPLATES[category] || ACTIVITY_TEMPLATES.culture;
+  const tpl = rng.pick(pool);
+  return {
+    ...common,
+    name: fillTemplate(tpl.name, dest),
+    description: fillTemplate(tpl.desc, dest),
+    address: null,
+  };
 }
 
-function buildRestaurant(rng, dest, budgetLevel) {
+function titleCase(str) {
+  return str.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildRestaurant(rng, dest, budgetLevel, placePools, usedIds) {
+  const poi = placePools ? takeFromPool(placePools.restaurants, usedIds, rng) : null;
+  if (poi) {
+    const cuisine = poi.tags.cuisine ? titleCase(poi.tags.cuisine.split(";")[0]) : "Local";
+    return {
+      name: poi.name,
+      cuisine,
+      description: "Real, mapped restaurant — recommended for the quality-to-price ratio.",
+      price_range: rng.pick(PRICE_RANGES[budgetLevel] || PRICE_RANGES.standard),
+      address: poi.address,
+    };
+  }
+
   const cuisines = ["Local", "Seafood", "Street food", "Fusion", "Traditional", "Farm-to-table"];
   return {
     name: `${rng.pick(RESTAURANT_ADJECTIVES)} ${dest} ${rng.pick(RESTAURANT_NOUNS)}`,
     cuisine: rng.pick(cuisines),
     description: "Recommended for the quality-to-price ratio and consistently good reviews from locals.",
     price_range: rng.pick(PRICE_RANGES[budgetLevel] || PRICE_RANGES.standard),
+    address: null,
   };
 }
 
@@ -240,13 +293,27 @@ const BUDGET_DAILY = {
   luxury: { accommodation: 280, food: 110, attractions: 70, transport: 40, activities: 90 },
 };
 
+async function tryFetchRealPlaces(destination) {
+  try {
+    const geo = await geocodeDestination(destination);
+    const places = await fetchNearbyPlaces(geo.lat, geo.lon);
+    const pools = buildPlacePools(places);
+    return { geo, pools };
+  } catch (e) {
+    return { geo: null, pools: null };
+  }
+}
+
 export async function generateItinerary(req) {
   const { destination, days, budget_level = "standard", intensity = "balanced", interests = [], group_size = 2 } = req;
   const dest = shortName(destination);
   const rng = makeRng(`${destination}|${days}|${budget_level}|${intensity}|${(interests || []).join(",")}`);
 
+  const { geo, pools: placePools } = await tryFetchRealPlaces(destination);
+  const usedPlaceIds = new Set();
+
   const destination_type = inferDestinationType(destination);
-  const country = inferCountry(destination);
+  const country = geo?.country || inferCountry(destination);
 
   const preferredCategories = interests?.length ? interests.filter((i) => ACTIVITY_TEMPLATES[i]) : [];
   const categoryPool = preferredCategories.length ? [...preferredCategories, ...rng.shuffle(CATEGORY_POOL)] : rng.shuffle(CATEGORY_POOL);
@@ -269,7 +336,7 @@ export async function generateItinerary(req) {
       const activities = [];
       for (let i = 0; i < n; i++) {
         const isGem = slot === hiddenGemSlot;
-        activities.push(buildActivity(rng, nextCategory(), dest, interests, budget_level, isGem));
+        activities.push(buildActivity(rng, nextCategory(), dest, interests, budget_level, isGem, placePools, usedPlaceIds));
         slot++;
       }
       return { route_note: `Grouped for minimal backtracking around ${dest}.`, activities };
@@ -281,16 +348,28 @@ export async function generateItinerary(req) {
       morning: buildSegment(counts[0]),
       afternoon: buildSegment(counts[1]),
       evening: buildSegment(counts[2]),
-      lunch: buildRestaurant(rng, dest, budget_level),
-      dinner: buildRestaurant(rng, dest, budget_level),
+      lunch: buildRestaurant(rng, dest, budget_level, placePools, usedPlaceIds),
+      dinner: buildRestaurant(rng, dest, budget_level, placePools, usedPlaceIds),
     });
   }
 
-  const hiddenGems = rng.shuffle(HIDDEN_GEM_TEMPLATES).slice(0, Math.min(4, HIDDEN_GEM_TEMPLATES.length)).map((g) => ({
+  const realHiddenCandidates = (placePools?.hiddenCandidates || []).filter((p) => !usedPlaceIds.has(p.id));
+  const realHiddenGems = rng.shuffle(realHiddenCandidates).slice(0, 4).map((p) => {
+    usedPlaceIds.add(p.id);
+    return {
+      name: p.name,
+      description: `A mapped local spot in ${dest} that doesn't show up in most guides.`,
+      why_hidden: "Lightly documented online — no Wikipedia entry, mostly known to locals.",
+      address: p.address,
+    };
+  });
+  const templateHiddenGems = rng.shuffle(HIDDEN_GEM_TEMPLATES).slice(0, Math.max(0, 4 - realHiddenGems.length)).map((g) => ({
     name: fillTemplate(g.name, dest),
     description: fillTemplate(g.desc, dest),
     why_hidden: g.why,
+    address: null,
   }));
+  const hiddenGems = [...realHiddenGems, ...templateHiddenGems];
 
   const groupMultiplier = 1 + (Math.max(1, group_size) - 1) * 0.85;
   const buildTier = (tier) => {
@@ -319,7 +398,7 @@ export async function generateItinerary(req) {
 
   const photography_spots = rng.shuffle(genDays.flatMap((d) => [...d.morning.activities, ...d.afternoon.activities, ...d.evening.activities]))
     .slice(0, 4)
-    .map((a) => ({ name: a.name, best_time: a.best_time, description: `Frame it during ${a.best_time.toLowerCase()} for the best light.` }));
+    .map((a) => ({ name: a.name, best_time: a.best_time, description: `Frame it during ${a.best_time.toLowerCase()} for the best light.`, address: a.address || null }));
 
   const seasonByType = {
     beach: "Late spring through early autumn", mountain: "Winter for snow, summer for hiking",

@@ -155,6 +155,7 @@ export default function TripResult({ planRequest }) {
                   <div className="text-purple-200 text-[10px] uppercase tracking-wide font-medium mb-1">Locals' pick</div>
                   <h4 className="text-white font-medium">{g.name}</h4>
                   <p className="text-white/65 text-xs mt-1">{g.description}</p>
+                  {g.address && <p className="flex items-center gap-1 text-white/45 text-[11px] mt-1.5"><MapPin className="w-3 h-3 shrink-0" /> {g.address}</p>}
                   {g.why_hidden && <p className="text-white/45 text-[11px] mt-1.5 italic">{g.why_hidden}</p>}
                 </motion.div>
               ))}
@@ -177,6 +178,7 @@ export default function TripResult({ planRequest }) {
                       {p.best_time && <span className="text-amber-200 text-[10px] bg-amber-500/15 px-1.5 py-0.5 rounded-full">{p.best_time}</span>}
                     </div>
                     {p.description && <p className="text-white/60 text-xs mt-0.5">{p.description}</p>}
+                    {p.address && <p className="flex items-center gap-1 text-white/45 text-[11px] mt-1"><MapPin className="w-3 h-3 shrink-0" /> {p.address}</p>}
                   </div>
                 </div>
               ))}

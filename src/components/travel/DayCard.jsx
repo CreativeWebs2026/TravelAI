@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Sun, Cloud, Moon, UtensilsCrossed, MapPin, Clock, DollarSign } from "lucide-react";
+import { Sun, Cloud, Moon, UtensilsCrossed, MapPin, Navigation, Clock, DollarSign } from "lucide-react";
 
 const CATEGORY_STYLES = {
   nature: { ring: "ring-emerald-400/30", bg: "bg-emerald-500/10", text: "text-emerald-200" },
@@ -35,9 +35,14 @@ function Activity({ activity, index }) {
               {activity.is_hidden_gem && <span className="text-[10px] uppercase tracking-wide text-purple-200 bg-purple-500/20 px-1.5 py-0.5 rounded-full font-medium">Hidden gem</span>}
             </div>
             {activity.description && <p className="text-white/65 text-xs mt-1 leading-relaxed">{activity.description}</p>}
+            {activity.address && (
+              <div className="flex items-center gap-1 text-white/55 text-[11px] mt-1.5">
+                <MapPin className="w-3 h-3 shrink-0" /> {activity.address}
+              </div>
+            )}
             <div className="flex items-center gap-3 mt-2 flex-wrap text-white/50 text-[11px]">
               {activity.best_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {activity.best_time}</span>}
-              {activity.travel_time && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {activity.travel_time}</span>}
+              {activity.travel_time && <span className="flex items-center gap-1"><Navigation className="w-3 h-3" /> {activity.travel_time}</span>}
               {activity.cost_estimate && <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> {activity.cost_estimate}</span>}
             </div>
           </div>
@@ -92,6 +97,7 @@ export default function DayCard({ day, index }) {
               <div className="flex items-center gap-1.5 text-orange-200 text-[10px] uppercase tracking-wide font-medium mb-1"><UtensilsCrossed className="w-3 h-3" /> Lunch</div>
               <div className="text-white text-sm font-medium">{day.lunch.name}</div>
               {day.lunch.description && <div className="text-white/60 text-xs mt-0.5">{day.lunch.description}</div>}
+              {day.lunch.address && <div className="flex items-center gap-1 text-white/50 text-[11px] mt-1"><MapPin className="w-3 h-3 shrink-0" /> {day.lunch.address}</div>}
               {day.lunch.price_range && <div className="text-white/50 text-[11px] mt-1">{day.lunch.price_range}</div>}
             </div>
           )}
@@ -100,6 +106,7 @@ export default function DayCard({ day, index }) {
               <div className="flex items-center gap-1.5 text-rose-200 text-[10px] uppercase tracking-wide font-medium mb-1"><UtensilsCrossed className="w-3 h-3" /> Dinner</div>
               <div className="text-white text-sm font-medium">{day.dinner.name}</div>
               {day.dinner.description && <div className="text-white/60 text-xs mt-0.5">{day.dinner.description}</div>}
+              {day.dinner.address && <div className="flex items-center gap-1 text-white/50 text-[11px] mt-1"><MapPin className="w-3 h-3 shrink-0" /> {day.dinner.address}</div>}
               {day.dinner.price_range && <div className="text-white/50 text-[11px] mt-1">{day.dinner.price_range}</div>}
             </div>
           )}
